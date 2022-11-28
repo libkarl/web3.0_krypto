@@ -17,6 +17,8 @@ type TransactionContextType = {
   formData: FormDataObject;
   setFormData: React.Dispatch<React.SetStateAction<FormDataObject>>;
   sendTransaction: () => Promise<void>;
+  transactions: any;
+  isLoading: any;
 };
 
 type FormDataObject = {
@@ -62,6 +64,7 @@ export const TransactionProvider = ({ children }: TransactionProviderProps) => {
   const [trnsactionCount, setTransactionCount] = useState(
     localStorage.getItem("transactionCount")
   );
+  const [transactions, setTransactions] = useState([]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -73,6 +76,52 @@ export const TransactionProvider = ({ children }: TransactionProviderProps) => {
     setFormData((prevState) => ({ ...prevState, [name]: e.target.value }));
   };
 
+  const getAllTransactions = async () => {
+    try {
+      if (ethereum) {
+        const transactionsContract = getEthereumContract();
+        // The get all transactions on the transactionContract object is special function
+        // which is created inside my solidity contract
+        const availableTransactions =
+          await transactionsContract.getAllTransactions();
+
+        const structuredTransactions = availableTransactions.map(
+          (transaction: any) => ({
+            addressTo: transaction.receiver,
+            addressFrom: transaction.sender,
+            // there is Bignumber date format inside ethereum objet timestamp field
+            // so it has to be converted this way
+            timestamp: new Date(
+              transaction.timestamp.toNumber() * 1000
+            ).toLocaleString(),
+            message: transaction.message,
+            keyword: transaction.keyword,
+            // convert hex dec Gwei amount of ether to just ether
+            amount: parseInt(transaction.amount._hex) / 10 ** 18,
+          })
+        );
+
+        setTransactions(structuredTransactions);
+      } else {
+        console.log("Ethereum is not present");
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const checkIfTransactionsExist = async () => {
+    try {
+      const transactionContract = getEthereumContract();
+      const transactionCount = await transactionContract.getTransactionCount();
+
+      window.localStorage.setItem("transactionCount", transactionCount);
+    } catch (error) {
+      console.log(error);
+      throw new Error("No ethereum objet");
+    }
+  };
+
   const checkIfWalletIsConnected = async () => {
     try {
       if (!ethereum) return alert("Please install metamask");
@@ -82,12 +131,10 @@ export const TransactionProvider = ({ children }: TransactionProviderProps) => {
       if (accounts.length) {
         setCurrentAccout(accounts[0]);
 
-        // get all transactions associated with conected account
+        getAllTransactions();
       } else {
         console.log("No accounts find");
       }
-
-      console.log("Conected accounts from eth-request:", accounts);
     } catch (error) {
       console.log(error);
       throw new Error("No ethereum objet");
@@ -157,6 +204,7 @@ export const TransactionProvider = ({ children }: TransactionProviderProps) => {
   // při prvním načtení aplikace zkontroluje jestli je připojena metamask peněženka
   useEffect(() => {
     checkIfWalletIsConnected();
+    checkIfTransactionsExist();
   }, []);
 
   return (
@@ -168,6 +216,8 @@ export const TransactionProvider = ({ children }: TransactionProviderProps) => {
         setFormData,
         handleChange,
         sendTransaction,
+        transactions,
+        isLoading,
       }}
     >
       {children}
